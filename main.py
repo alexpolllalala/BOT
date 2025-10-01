@@ -1,5 +1,4 @@
-# full_60day_ielts_bot.py
-# ПОВНА ВЕРСІЯ — встав TOKEN і запускай
+
 import os
 import json
 import logging
@@ -86,7 +85,7 @@ tasks = {
  60: "🏁 FINAL: Full mock test — Listening, Reading, Writing, Speaking (simulate real timing)."
 }
 
-# ====== HELPERS: підписники ======
+# ====== HELPERS ======
 def load_subscribers():
     try:
         with open(SUBS_FILE, "r", encoding="utf-8") as f:
@@ -119,11 +118,9 @@ def remove_subscriber(chat_id):
 def current_day_number():
     today = datetime.date.today()
     delta = (today - START_DATE).days + 1
-    if delta < 1:
+    if delta < 1 or delta > TOTAL_DAYS:
         return None
-    if delta > TOTAL_DAYS:
-        return None
-    return int(delta)
+    return delta
 
 def build_message_for(day_num):
     task = tasks.get(day_num, "Завдання ще не додане.")
@@ -177,34 +174,25 @@ async def cmd_day(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ====== DAILY SENDER ======
 async def send_daily_job(context: ContextTypes.DEFAULT_TYPE):
-    # This job runs at 01:00 UTC (approx 19:00 Alberta). It will send today's task to all subscribers.
     day = current_day_number()
     subs = load_subscribers()
-    if day is None:
-        logger.info("Daily job: курс ще не почався або завершено. Нічого не надсилаю.")
-        return
-    if not subs:
-        logger.info("Daily job: немає підписників.")
+    if day is None or not subs:
         return
     message = build_message_for(day)
-    success = 0
-    fail = 0
     for cid in subs:
         try:
             await context.bot.send_message(chat_id=cid, text=message)
-            success += 1
         except Exception as e:
             logger.warning(f"Failed to send to {cid}: {e}")
-            fail += 1
-    logger.info(f"Daily job: sent day {day} to {success} subscribers, failed {fail}.")
 
 # ====== MAIN ======
 def main():
-    if not TOKEN or TOKEN.startswith("ВСТАВ_") :
-        logger.error("Вставте свій Telegram BOT TOKEN у змінну TOKEN у цьому файлі.")
+    if not TOKEN:
+        logger.error("❌ Встав BOT_TOKEN у змінні середовища Render або в код.")
         return
 
     app = Application.builder().token(TOKEN).build()
+    job_queue = app.job_queue  # ✅ створюємо змінну для JobQueue
 
     # handlers
     app.add_handler(CommandHandler("start", cmd_start))
@@ -213,12 +201,11 @@ def main():
     app.add_handler(CommandHandler("today", cmd_today))
     app.add_handler(CommandHandler("day", cmd_day))
 
-    # scheduled daily job (01:00 UTC ≈ 19:00 Alberta). Use timezone-aware time
-    app.job_queue.run_daily(send_daily_job, time=SEND_TIME_UTC, name="daily_ielts")
+    # daily job
+    job_queue.run_daily(send_daily_job, time=SEND_TIME_UTC, name="daily_ielts")
 
-    logger.info("Bot started. Polling...")
+    logger.info("✅ Bot started. Polling...")
     app.run_polling()
 
 if __name__ == "__main__":
     main()
-
